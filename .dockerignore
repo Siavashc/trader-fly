@@ -1,0 +1,12 @@
+.env
+data/*.png
+data/*.log
+data/*.log.old
+data/tunnel_test.log
+__pycache__/
+**/__pycache__/
+*.pyc
+.git
+start_trader.ps1
+run_trader_forever.ps1
+DEPLOY.md

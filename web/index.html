@@ -1,0 +1,852 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Trader Fly — the trading desk</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { height:100%; overflow:hidden; background:#0b0d12; color:#e8e6dd;
+    font-family:'Segoe UI',system-ui,Tahoma,sans-serif; user-select:none; }
+  #scene { position:fixed; inset:0; display:block; }
+
+  /* ---------- top bar ---------- */
+  #topbar { position:fixed; top:calc(env(safe-area-inset-top,0px) + 8px); left:10px; right:10px;
+    display:flex; align-items:center; gap:8px; z-index:10; pointer-events:none; flex-wrap:wrap; }
+  .chip { background:rgba(12,15,22,.72); border:1px solid rgba(255,255,255,.10);
+    border-radius:12px; padding:6px 11px; font-size:12px; line-height:1.4;
+    backdrop-filter:blur(8px); white-space:nowrap; }
+  .chip .lbl { color:#8b93a7; font-size:9.5px; letter-spacing:.08em; display:block; text-transform:uppercase; }
+  .chip b { font-size:14px; font-variant-numeric:tabular-nums; }
+  #price { color:#7fe0a8; } #price.neg { color:#ff6b81; }
+  #feed { width:8px; height:8px; border-radius:50%; display:inline-block;
+    margin-right:5px; background:#5fe08a; box-shadow:0 0 6px #5fe08a; }
+  #feed.sim { background:#e8b34a; box-shadow:0 0 6px #e8b34a; }
+
+  /* ---------- side panel ---------- */
+  #panel { position:fixed; top:calc(env(safe-area-inset-top,0px) + 8px); right:10px;
+    bottom:calc(env(safe-area-inset-bottom,0px) + 10px); width:322px; z-index:12;
+    display:flex; flex-direction:column; gap:9px; overflow:hidden auto; scrollbar-width:none;
+    transition:transform .3s ease; }
+  #panel::-webkit-scrollbar { display:none; }
+  #panel.hidden { transform:translateX(calc(100% + 14px)); }
+  .card { background:rgba(13,16,24,.78); border:1px solid rgba(255,255,255,.09);
+    border-radius:16px; padding:13px 14px; backdrop-filter:blur(10px); flex-shrink:0; }
+  .card h3 { font-size:10px; letter-spacing:.12em; color:#8b93a7; text-transform:uppercase;
+    margin-bottom:9px; display:flex; justify-content:space-between; align-items:center; }
+  .big { font-size:24px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .pos { color:#7fe0a8; } .neg { color:#ff6b81; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:8px 12px; font-size:12.5px; }
+  .grid .k { color:#8b93a7; font-size:10.5px; }
+  .grid .v { font-variant-numeric:tabular-nums; font-weight:600; }
+  .bar { height:5px; border-radius:3px; background:#232838; margin-top:9px; overflow:hidden; }
+  .bar i { display:block; height:100%; background:linear-gradient(90deg,#35d07f,#7fe0a8); border-radius:3px; }
+  #poscard { display:none; }
+  #poscard .side { display:inline-block; padding:2px 9px; border-radius:8px; font-weight:700;
+    font-size:12px; margin-right:7px; }
+  #poscard .side.long { background:rgba(53,208,127,.16); color:#5fe08a;
+    border:1px solid rgba(95,224,168,.45); }
+  #poscard .side.short { background:rgba(255,84,112,.14); color:#ff6b81;
+    border:1px solid rgba(255,107,129,.45); }
+  #closebtn { margin-top:9px; width:100%; padding:9px; border-radius:11px; cursor:pointer;
+    background:rgba(255,84,112,.13); border:1px solid rgba(255,107,129,.5); color:#ffb3c0;
+    font-size:12.5px; font-weight:600; transition:transform .08s; }
+  #closebtn:active { transform:scale(.96); }
+  #sort { display:flex; gap:5px; margin-bottom:9px; flex-wrap:wrap; }
+  #sort button { flex:1; min-width:62px; background:rgba(255,255,255,.05); color:#9aa2b5;
+    border:1px solid rgba(255,255,255,.10); border-radius:9px; padding:6px 4px;
+    font-size:10.5px; cursor:pointer; transition:all .15s; }
+  #sort button.on { background:rgba(95,224,168,.14); color:#7fe0a8;
+    border-color:rgba(95,224,168,.5); }
+  #trades { display:flex; flex-direction:column; max-height:38vh; overflow-y:auto; scrollbar-width:none; }
+  #trades::-webkit-scrollbar { display:none; }
+  .tr { display:flex; align-items:center; gap:8px; padding:7px 2px;
+    border-bottom:1px dashed rgba(255,255,255,.07); font-size:12px; }
+  .tr:last-child { border-bottom:none; }
+  .tr .tm { color:#8b93a7; font-size:10px; width:66px; font-variant-numeric:tabular-nums; }
+  .tr .sd { width:48px; font-weight:700; font-size:11px; }
+  .tr .sd.long { color:#5fe08a; } .tr .sd.short { color:#ff6b81; }
+  .tr .pl { flex:1; text-align:right; font-weight:700; font-variant-numeric:tabular-nums; }
+  .tr .dur { color:#66708a; font-size:9.5px; width:44px; text-align:right; }
+  #mood { font-size:11.5px; color:#aab2c5; line-height:1.5; }
+  #mood b { color:#e8d78a; }
+
+  #panelbtn { position:fixed; right:10px; bottom:calc(env(safe-area-inset-bottom,0px) + 10px);
+    z-index:13; width:46px; height:46px; border-radius:50%; display:none; cursor:pointer;
+    background:rgba(12,15,22,.85); border:1px solid rgba(255,255,255,.16); color:#e8e6dd;
+    font-size:20px; align-items:center; justify-content:center; backdrop-filter:blur(6px); }
+  #toast { position:fixed; top:18%; left:50%; transform:translateX(-50%) translateY(-8px);
+    z-index:20; background:rgba(12,15,22,.92); border:1px solid rgba(95,224,168,.4);
+    color:#e8e6dd; border-radius:12px; padding:10px 16px; font-size:13px; line-height:1.55;
+    text-align:center; opacity:0; transition:all .3s; pointer-events:none; max-width:86vw; }
+  #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+
+  @media (max-width:760px) {
+    #panelbtn { display:flex; }
+    #panel { width:min(88vw, 322px); }
+    #panel.hidden { transform:translateX(calc(100% + 14px)); }
+  }
+  @media (min-width:761px) { #panel { display:flex !important; } }
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+
+<div id="topbar">
+  <div class="chip"><span class="lbl">🪰 Trader Fly</span><b style="font-size:12px">BTC-USD · paper</b></div>
+  <div class="chip"><span class="lbl">Price</span><b id="price">$—</b></div>
+  <div class="chip"><span class="lbl">Session P/L</span><b id="pnlchip">—</b></div>
+  <div class="chip"><span class="lbl">Desk time</span><b id="clock">—</b></div>
+  <div class="chip"><span id="feed"></span><span class="lbl" style="display:inline">feed</span></div>
+</div>
+
+<button id="panelbtn">📊</button>
+
+<div id="panel">
+  <div class="card">
+    <h3>Account</h3>
+    <div class="big" id="totalpnl">—</div>
+    <div class="grid" style="margin-top:9px">
+      <div><div class="k">Equity</div><div class="v" id="equity">—</div></div>
+      <div><div class="k">Win rate</div><div class="v" id="winrate">—</div></div>
+      <div><div class="k">Wins</div><div class="v pos" id="wins">0</div></div>
+      <div><div class="k">Losses</div><div class="v neg" id="losses">0</div></div>
+    </div>
+    <div class="bar"><i id="winbar" style="width:0%"></i></div>
+  </div>
+
+  <div class="card" id="poscard">
+    <h3>Open position</h3>
+    <div><span class="side" id="posside">LONG</span><span id="posnotional">$1,000</span></div>
+    <div class="grid" style="margin-top:9px">
+      <div><div class="k">Entry</div><div class="v" id="posentry">—</div></div>
+      <div><div class="k">Now</div><div class="v" id="posnow">—</div></div>
+      <div><div class="k">Unrealized</div><div class="v" id="posupnl">—</div></div>
+      <div><div class="k">Exit</div><div class="v">SL −0.35% · TP +0.7%</div></div>
+    </div>
+    <button id="closebtn">Take profit now</button>
+  </div>
+
+  <div class="card">
+    <h3>🧠 Fly mood</h3>
+    <div id="mood">warming up…</div>
+  </div>
+
+  <div class="card">
+    <h3>Trade history</h3>
+    <div id="sort">
+      <button data-s="time_desc" class="on">Newest</button>
+      <button data-s="time_asc">Oldest</button>
+      <button data-s="pnl_desc">Best</button>
+      <button data-s="pnl_asc">Worst</button>
+    </div>
+    <div id="trades"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+window.addEventListener('error', e => {
+  const t = document.getElementById('toast');
+  if (t) { t.classList.add('show'); t.textContent = '⚠️ ' + e.message; }
+});
+// ===========================================================================
+// Telegram integration
+// ===========================================================================
+const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+if (tg) { tg.ready(); tg.expand(); try { tg.setHeaderColor('#0b0d12'); tg.setBackgroundColor('#0b0d12'); } catch (e) {} }
+
+// ===========================================================================
+// state polling
+// ===========================================================================
+const S = {
+  price: 0, priceShown: 0, candles: [], position: null, upnl: 0,
+  pnl_total: 0, equity_start: 1000, wins: 0, losses: 0, trades: [],
+  notes: [], feed_ok: false, lastTradeId: 0, firstLoad: true,
+};
+let sortMode = 'time_desc';
+
+async function poll() {
+  try {
+    const r = await fetch('/api/state', { cache: 'no-store' });
+    const d = await r.json();
+    const prevPos = S.position;
+    Object.assign(S, d);
+    S.priceShown = S.priceShown || d.price;
+    // detect a fresh open/close for the fly's speech bubble + toast
+    const last = d.trades.length ? d.trades[d.trades.length - 1] : null;
+    if (last && !S.firstLoad && last.id !== S.lastTradeId) {
+      flySay(last.pnl >= 0 ? '$$$' : 'ouch!');
+      toast(`🪰 ${last.side} closed <b style="color:${last.pnl >= 0 ? '#7fe0a8' : '#ff6b81'}">$${last.pnl.toFixed(2)}</b> — ${last.pnl >= 0 ? 'dopamine reward 🍰' : 'dopamine punishment ⚡'}`);
+      if (last.pnl >= 0) confetti();
+    }
+    if (d.position && (!prevPos || prevPos.t_open !== d.position.t_open) && !S.firstLoad) {
+      flySay(d.position.side === 'LONG' ? 'buy!' : 'sell!');
+      toast(`🪰 ${d.position.side} opened @ $${d.position.entry.toLocaleString()} — ${d.position.why || ''}`);
+    }
+    if (last) S.lastTradeId = last.id;
+    S.firstLoad = false;
+  } catch (e) { /* keep last state */ }
+}
+
+setInterval(poll, 2000); poll();
+
+// ===========================================================================
+// helpers
+// ===========================================================================
+const $ = id => document.getElementById(id);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const smooth = t => t * t * (3 - 2 * t);
+function fmt$(v) { return (v < 0 ? '-$' : '$') + Math.abs(v).toLocaleString(undefined, { maximumFractionDigits: 2, minimumFractionDigits: 2 }); }
+function mulberry(seed) { return function () { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const R = mulberry(20260924); // deterministic scene randomness
+
+// --- palette keyframes over the day (user's local clock) ---
+const PAL = [
+  // h, skyTop, skyHorizon, wall, floor, city, cityLit, warm
+  [0.0, '#070b1d', '#121a33', '#221f2b', '#181620', '#0c1322', 1, 0],
+  [5.0, '#0b1230', '#24304f', '#242230', '#191722', '#0e1526', 1, 0],
+  [6.6, '#2c3d6e', '#e98a5a', '#3a3238', '#231d22', '#1a2130', 0.4, .3],
+  [9.0, '#63aede', '#b8dcf2', '#4a4340', '#2b2521', '#2c3a4d', 0, 0],
+  [15.0, '#5aa3dc', '#c2e2f2', '#4a4340', '#2b2521', '#2c3a4d', 0, 0],
+  [17.6, '#51507c', '#f0895e', '#3d3438', '#241e20', '#232c3f', .3, .55],
+  [19.4, '#1a2148', '#5a3a54', '#2a2632', '#1b1820', '#141c30', 1, .25],
+  [22.0, '#080d20', '#131c38', '#221f2b', '#181620', '#0c1322', 1, 0],
+  [24.0, '#070b1d', '#121a33', '#221f2b', '#181620', '#0c1322', 1, 0],
+];
+function mixHex(a, b, t) {
+  const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16);
+  const r = Math.round(lerp(pa >> 16, pb >> 16, t)), g = Math.round(lerp(pa >> 8 & 255, pb >> 8 & 255, t)), b2 = Math.round(lerp(pa & 255, pb & 255, t));
+  return `rgb(${r},${g},${b2})`;
+}
+const HOUR_OVERRIDE = (() => { const q = new URLSearchParams(location.search).get('hour'); return q === null ? null : parseFloat(q); })();
+function dayPal() {
+  const d = new Date();
+  let h = d.getHours() + d.getMinutes() / 60;
+  if (HOUR_OVERRIDE !== null && !isNaN(HOUR_OVERRIDE)) h = HOUR_OVERRIDE;
+  let i = 0; while (i < PAL.length - 2 && PAL[i + 1][0] < h) i++;
+  const a = PAL[i], b = PAL[i + 1];
+  const t = clamp((h - a[0]) / (b[0] - a[0]), 0, 1);
+  const mix = j => mixHex(a[j], b[j], t);
+  const daylight = clamp(Math.sin((h - 6) / 12 * Math.PI), 0, 1); // 0 night .. 1 noon
+  return { top: mix(1), hor: mix(2), wall: mix(3), floor: mix(4), city: mix(5),
+    lit: lerp(a[6], b[6], t), warm: lerp(a[7], b[7], t), daylight, hour: h };
+}
+// star field + skyline (deterministic)
+const STARS = Array.from({ length: 70 }, () => ({ x: R(), y: R() * .75, r: .5 + R() * 1.1, tw: R() * 6.28 }));
+function skyline(seed, n, minH, maxH) {
+  const rr = mulberry(seed); const arr = []; let x = 0;
+  for (let i = 0; i < n; i++) {
+    const w = 18 + rr() * 46, h = 60 + rr() * 150;
+    const wins = []; const cols = Math.floor(w / 11), rows = Math.floor(h / 13);
+    for (let c = 0; c < cols; c++) for (let r2 = 0; r2 < rows; r2++) if (rr() < .38) wins.push([c, r2]);
+    arr.push({ x, w, h, wins, cols, rows, spire: rr() < .18 });
+    x += w + 2 + rr() * 6;
+  }
+  return arr;
+}
+const SKY1 = skyline(7, 26), SKY2 = skyline(99, 20);
+
+// ===========================================================================
+// scene
+// ===========================================================================
+const cvs = $('scene'), ctx = cvs.getContext('2d');
+const LW = 1280, LH = 800;              // logical scene size
+let scale = 1, ox = 0, oy = 0;
+
+function resize() {
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  cvs.width = innerWidth * dpr; cvs.height = innerHeight * dpr;
+  cvs.style.width = innerWidth + 'px'; cvs.style.height = innerHeight + 'px';
+  // cover-scale the scene; on narrow screens bias the crop toward the desk+fly
+  scale = Math.max(innerWidth / LW, innerHeight / LH) * dpr;
+  ox = (innerWidth * dpr - LW * scale) / 2;
+  oy = (innerHeight * dpr - LH * scale) / 2;
+  if (innerWidth < 761) {
+    const over = LW * scale - innerWidth * dpr;          // horizontal overflow > 0
+    if (over > 0) ox -= over * .14;                      // center ~ x 760 (desk)
+  }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+}
+addEventListener('resize', resize); resize();
+
+// desk geometry (logical coords)
+const G = {
+  horizon: 545,
+  win: { x: 130, y: 95, w: 480, h: 370 },
+  deskTop: 452, deskFront: 500, deskX: 340, deskW: 890,
+  mon: { x: 596, y: 200, w: 292, h: 218 },
+  mon2: { x: 424, y: 262, w: 152, h: 158 },
+  flyX: 742, flyY: 496, flyScale: .82,
+  chair: { x: 640, y: 508, w: 204, h: 200 },
+};
+
+function drawScene(t, pal) {
+  const night = 1 - pal.daylight;
+  // ---- room shell ----
+  ctx.fillStyle = pal.wall; ctx.fillRect(-ox / scale - 4, -oy / scale - 4, LW + 8, G.horizon + 8);
+  ctx.fillStyle = pal.floor; ctx.fillRect(-ox / scale - 4, G.horizon, LW + 8, LH - G.horizon + 8);
+  // floor boards hint
+  ctx.fillStyle = 'rgba(0,0,0,.14)';
+  for (let i = 0; i < 7; i++) ctx.fillRect(G.horizon + i * 38, G.horizon + i * 38 * .0, LW, 2 + i * 0);
+  for (let y = G.horizon + 14; y < LH; y += 34) { ctx.globalAlpha = .10; ctx.fillRect(0, y, LW, 2); ctx.globalAlpha = 1; }
+
+  drawWindow(t, pal, night);
+  drawWallDecor(t, pal);
+  drawRug();
+  drawDesk(pal, night);
+  drawMonitorSide(t, pal, night);
+  drawMonitorMain(t, pal, night);
+  drawDeskItems(t, pal, night);
+  drawChair(t);
+  drawFly(t, night);
+  drawLighting(pal, night);
+}
+
+// ---------- window: sky, sun/moon, stars, skyline ----------
+function drawWindow(t, pal, night) {
+  const w = G.win;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(w.x, w.y, w.w, w.h); ctx.clip();
+  // sky gradient
+  const g = ctx.createLinearGradient(0, w.y, 0, w.y + w.h);
+  g.addColorStop(0, pal.top); g.addColorStop(1, pal.hor);
+  ctx.fillStyle = g; ctx.fillRect(w.x, w.y, w.w, w.h);
+
+  const sunT = (pal.hour - 6) / 12;                     // 0..1 across day
+  const sunAlt = sunT >= 0 && sunT <= 1 ? Math.sin(sunT * Math.PI) : 0;
+  // stars
+  if (night > .25) {
+    for (const s of STARS) {
+      const a = (night - .25) / .75 * (.45 + .55 * Math.abs(Math.sin(t * 1.7 + s.tw)));
+      ctx.globalAlpha = a * .9;
+      ctx.fillStyle = '#dfe8ff';
+      ctx.beginPath(); ctx.arc(w.x + s.x * w.w, w.y + s.y * w.h, s.r, 0, 7); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+  // moon (night) / sun (day)
+  if (sunT > -.08 && sunT < 1.08 && sunAlt > 0) {
+    const sx = w.x + w.w * (.12 + sunT * .78), sy = w.y + w.h * (.78 - sunAlt * .62);
+    ctx.save(); ctx.shadowColor = 'rgba(255,214,140,.9)'; ctx.shadowBlur = 44;
+    ctx.fillStyle = '#ffd98f'; ctx.beginPath(); ctx.arc(sx, sy, 15, 0, 7); ctx.fill(); ctx.restore();
+  } else {
+    const mh = (pal.hour - 19 + 24) % 24;                 // hours past dusk
+    const mx = w.x + w.w * (.18 + clamp(mh / 10, 0, 1) * .62), my = w.y + w.h * (.30 - clamp(mh / 10, 0, .2));
+    ctx.save(); ctx.shadowColor = 'rgba(210,225,255,.9)'; ctx.shadowBlur = 36;
+    ctx.fillStyle = '#e8eef8'; ctx.beginPath(); ctx.arc(mx, my, 13, 0, 7); ctx.fill();
+    ctx.shadowBlur = 0; ctx.fillStyle = pal.top; ctx.globalAlpha = .85;
+    ctx.beginPath(); ctx.arc(mx + 6, my - 4, 11, 0, 7); ctx.fill(); ctx.restore(); ctx.globalAlpha = 1;
+  }
+  // clouds (day)
+  if (pal.daylight > .2) {
+    ctx.fillStyle = 'rgba(255,255,255,' + (.28 * pal.daylight) + ')';
+    for (let i = 0; i < 3; i++) {
+      const cx2 = w.x + ((t * (5 + i * 3) + i * 260) % (w.w + 160)) - 80;
+      const cy2 = w.y + 46 + i * 44 + Math.sin(t * .3 + i) * 4;
+      for (const [dx, dy, r] of [[0, 0, 22], [20, 6, 15], [-20, 8, 14], [6, -10, 13]])
+        { ctx.beginPath(); ctx.arc(cx2 + dx, cy2 + dy, r, 0, 7); ctx.fill(); }
+    }
+  }
+  // skyline far
+  ctx.fillStyle = pal.city;
+  drawSky(SKY2, w.x + 20, w.y + w.h, w.w - 60, .62, pal, t, 0);
+  // skyline near + windows
+  drawSky(SKY1, w.x - 10, w.y + w.h, w.w + 30, 1, pal, t, 1);
+  ctx.restore();
+
+  // frame
+  ctx.strokeStyle = '#0d0f14'; ctx.lineWidth = 14;
+  ctx.strokeRect(w.x - 7, w.y - 7, w.w + 14, w.h + 14);
+  ctx.strokeStyle = 'rgba(255,255,255,.07)'; ctx.lineWidth = 2;
+  ctx.strokeRect(w.x - 1, w.y - 1, w.w + 2, w.h + 2);
+  // mullions
+  ctx.fillStyle = '#0d0f14';
+  ctx.fillRect(w.x + w.w / 2 - 5, w.y, 10, w.h);
+  ctx.fillRect(w.x, w.y + w.h * .42 - 5, w.w, 10);
+  // glass glare
+  ctx.save(); ctx.globalAlpha = .05; ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.moveTo(w.x + 40, w.y); ctx.lineTo(w.x + 130, w.y); ctx.lineTo(w.x + 30, w.y + w.h); ctx.lineTo(w.x + 0, w.y + w.h); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(w.x + w.w - 150, w.y); ctx.lineTo(w.x + w.w - 90, w.y); ctx.lineTo(w.x + w.w - 190, w.y + w.h); ctx.lineTo(w.x + w.w - 250, w.y + w.h); ctx.fill();
+  ctx.restore();
+  // sill
+  ctx.fillStyle = '#14161c'; ctx.fillRect(w.x - 20, w.y + w.h, w.w + 40, 13);
+  ctx.fillStyle = 'rgba(255,255,255,.06)'; ctx.fillRect(w.x - 20, w.y + w.h, w.w + 40, 3);
+  // little plant on sill
+  drawSillPlant(w.x + w.w - 42, w.y + w.h, t);
+}
+function sunA(pal) { const s = (pal.hour - 6) / 12; return (s > 0 && s < 1) ? Math.sin(s * Math.PI) : 0; }
+function drawSky(arr, bx, by, span, k, pal, t, near) {
+  for (const b of arr) {
+    const x = bx + (b.x / 950) * span, w = b.w * (span / 950), h = b.h * k;
+    ctx.fillRect(x, by - h, w, h);
+    if (b.spire) { ctx.fillRect(x + w / 2 - 2, by - h - 16 * k, 4, 16 * k); if (near) { ctx.fillStyle = '#ff5454'; ctx.globalAlpha = .4 + .6 * Math.abs(Math.sin(t * 2)); ctx.beginPath(); ctx.arc(x + w / 2, by - h - 18 * k, 2, 0, 7); ctx.fill(); ctx.globalAlpha = 1; ctx.fillStyle = pal.city; } }
+    // windows
+    const lit = pal.lit;
+    for (const [c, r] of b.wins) {
+      const wx = x + 4 + c * 11 * (span / 950), wy = by - h + 8 + r * 13 * k;
+      if (wx > x + w - 6) continue;
+      if (lit > .05 && ((c * 7 + r * 13 + b.x) % 10) / 10 < pal.lit) {
+        const fl = .55 + .45 * Math.abs(Math.sin(t * .9 + c * 3 + r));
+        ctx.fillStyle = `rgba(255,196,110,${.75 * fl})`; ctx.fillRect(wx, wy, 4.5, 6);
+      }
+    }
+  }
+}
+function drawSillPlant(x, y, t) {
+  ctx.fillStyle = '#8a4a35'; ctx.beginPath();
+  ctx.moveTo(x - 9, y); ctx.lineTo(x + 9, y); ctx.lineTo(x + 6, y - 14); ctx.lineTo(x - 6, y - 14); ctx.fill();
+  ctx.strokeStyle = '#3f7a4c'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+  for (let i = -2; i <= 2; i++) {
+    const a = i * .5, sw = Math.sin(t * .8 + i) * 2;
+    ctx.beginPath(); ctx.moveTo(x, y - 14);
+    ctx.quadraticCurveTo(x + i * 6 + sw, y - 26, x + i * 10 + sw, y - 34 - Math.abs(i) * -4); ctx.stroke();
+  }
+}
+
+// ---------- wall decor: clock, shelf, poster ----------
+function drawWallDecor(t, pal) {
+  // analog wall clock with REAL local time
+  const cx = 688, cy = 136, r = 36;
+  ctx.fillStyle = '#101218'; ctx.beginPath(); ctx.arc(cx, cy, r + 6, 0, 7); ctx.fill();
+  ctx.fillStyle = '#e9e7de'; ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7); ctx.fill();
+  const d = new Date(), hr = (d.getHours() % 12 + d.getMinutes() / 60) * Math.PI / 6 - Math.PI / 2,
+        mn = d.getMinutes() * Math.PI / 30 - Math.PI / 2;
+  ctx.strokeStyle = '#22242c'; ctx.lineWidth = 3.5; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(hr) * r * .52, cy + Math.sin(hr) * r * .52); ctx.stroke();
+  ctx.lineWidth = 2.2; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(mn) * r * .78, cy + Math.sin(mn) * r * .78); ctx.stroke();
+  ctx.fillStyle = '#c0392b'; ctx.beginPath(); ctx.arc(cx, cy, 3, 0, 7); ctx.fill();
+  // shelf with plant + books + rocket
+  ctx.fillStyle = '#2b241f'; ctx.fillRect(880, 300, 250, 9);
+  ctx.fillStyle = '#8a4a35'; ctx.fillRect(900, 300 - 6, 60, 6); // book stack
+  ctx.fillStyle = '#31567d'; ctx.fillRect(900, 300 - 6 - 18, 46, 18);
+  ctx.strokeStyle = '#3f7a4c'; ctx.lineWidth = 2.5;
+  for (let i = -1; i <= 1; i++) { ctx.beginPath(); ctx.moveTo(990, 292); ctx.quadraticCurveTo(990 + i * 7 + Math.sin(t + i) * 2, 280, 990 + i * 11, 270); ctx.stroke(); }
+  ctx.fillStyle = '#8a4a35'; ctx.fillRect(978, 292, 24, 8);
+  ctx.fillStyle = '#d8d5cc'; ctx.beginPath(); ctx.moveTo(1075, 300); ctx.lineTo(1075, 272); ctx.lineTo(1082, 258); ctx.lineTo(1089, 272); ctx.lineTo(1089, 300); ctx.fill();
+  ctx.fillStyle = '#c0392b'; ctx.beginPath(); ctx.moveTo(1078, 264); ctx.lineTo(1082, 256); ctx.lineTo(1086, 264); ctx.fill();
+  ctx.fillStyle = '#5fb3e8'; ctx.beginPath(); ctx.arc(1082, 272, 3, 0, 7); ctx.fill();
+  // framed mini chart poster
+  ctx.fillStyle = '#101218'; ctx.fillRect(770, 292, 120, 88);
+  ctx.fillStyle = '#161a24'; ctx.fillRect(776, 298, 108, 76);
+  ctx.strokeStyle = '#35d07f'; ctx.lineWidth = 2; ctx.beginPath();
+  ctx.moveTo(782, 362); ctx.lineTo(800, 344); ctx.lineTo(800, 352); ctx.lineTo(826, 330); ctx.lineTo(826, 340); ctx.lineTo(852, 314); ctx.lineTo(878, 322); ctx.stroke();
+}
+
+function drawRug() {
+  ctx.save(); ctx.globalAlpha = .85;
+  const g = ctx.createRadialGradient(742, 730, 10, 742, 730, 240);
+  g.addColorStop(0, '#3d2f3a'); g.addColorStop(1, 'rgba(30,24,32,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(742, 730, 250, 60, 0, 0, 7); ctx.fill();
+  ctx.restore();
+}
+
+// ---------- desk ----------
+function drawDesk(pal, night) {
+  const d = G.deskTop, x0 = G.deskX, x1 = G.deskX + G.deskW;
+  // top
+  ctx.fillStyle = '#5a4634'; ctx.fillRect(x0, d, x1 - x0, 46);
+  ctx.fillStyle = 'rgba(255,255,255,.07)'; ctx.fillRect(x0, d, x1 - x0, 5);
+  // front panel (short — knee room below) + legs
+  ctx.fillStyle = '#4a3a2b'; ctx.fillRect(x0 + 8, d + 46, x1 - x0 - 16, 128);
+  ctx.fillStyle = '#3c2f23'; ctx.fillRect(x0 + 8, d + 46, x1 - x0 - 8, 8);
+  // drawer
+  ctx.fillStyle = '#523f2e'; ctx.fillRect(x1 - 210, d + 70, 180, 56);
+  ctx.fillStyle = '#2e251c'; ctx.fillRect(x1 - 130, d + 94, 60, 6);
+  // legs
+  ctx.fillStyle = '#3c2f23';
+  ctx.fillRect(x0 + 26, d + 174, 26, 96); ctx.fillRect(x1 - 52, d + 174, 26, 96);
+  // cable to floor
+  ctx.strokeStyle = '#14161a'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(910, d + 46); ctx.bezierCurveTo(918, d + 120, 900, G.horizon + 40, 920, G.horizon + 90); ctx.stroke();
+}
+
+// ---------- main monitor: live candles ----------
+function drawMonitorMain(t, pal, night) {
+  const m = G.mon;
+  // stand
+  ctx.fillStyle = '#1a1d24'; ctx.fillRect(m.x + m.w / 2 - 12, m.y + m.h, 24, 26);
+  ctx.fillRect(m.x + m.w / 2 - 60, m.y + m.h + 24, 120, 8);
+  // bezel
+  ctx.fillStyle = '#0c0e13'; ctx.fillRect(m.x - 9, m.y - 9, m.w + 18, m.h + 18, 0);
+  roundRect(m.x - 9, m.y - 9, m.w + 18, m.h + 18, 10); ctx.fill();
+  // screen bg
+  ctx.fillStyle = '#0a0f14'; ctx.fillRect(m.x, m.y, m.w, m.h);
+  const cs = S.candles.slice(-42);
+  if (cs.length > 2) {
+    const padT = 30, padB = 8;
+    let lo = 1e18, hi = -1e18;
+    for (const c of cs) { lo = Math.min(lo, c.l); hi = Math.max(hi, c.h); }
+    const span = (hi - lo) || 1; lo -= span * .08; hi += span * .08;
+    const y2v = v => m.y + m.h - padB - (v - lo) / (hi - lo) * (m.h - padB - padT);
+    const step = m.w / 42, bw = step * .58;
+    // grid
+    ctx.strokeStyle = 'rgba(255,255,255,.045)'; ctx.lineWidth = 1;
+    for (let gy = 1; gy < 4; gy++) { ctx.beginPath(); ctx.moveTo(m.x, m.y + padT + (m.h - padT - padB) * gy / 4); ctx.lineTo(m.x + m.w, m.y + padT + (m.h - padT - padB) * gy / 4); ctx.stroke(); }
+    // candles
+    const x0 = m.x + (m.w - 42 * step) / 2;
+    cs.forEach((c, i) => {
+      const cx = x0 + i * step + step / 2;
+      const up = c.c >= c.o;
+      ctx.strokeStyle = up ? '#35d07f' : '#ff5470'; ctx.fillStyle = up ? '#35d07f' : '#ff5470';
+      ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(cx, y2v(c.h)); ctx.lineTo(cx, y2v(c.l)); ctx.stroke();
+      const yo = y2v(Math.max(c.o, c.c)), yc = y2v(Math.min(c.o, c.c));
+      if (i === cs.length - 1) { ctx.shadowColor = up ? '#35d07f' : '#ff5470'; ctx.shadowBlur = 7; }
+      ctx.fillRect(cx - bw / 2, yo, bw, Math.max(2, yc - yo));
+      ctx.shadowBlur = 0;
+    });
+    // last price dashed line + tag
+    const lp = cs[cs.length - 1].c, ly = y2v(lp);
+    ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(m.x, ly); ctx.lineTo(m.x + m.w, ly); ctx.stroke(); ctx.setLineDash([]);
+  }
+  // header strip: symbol + price + pnl
+  ctx.fillStyle = 'rgba(8,12,18,.92)'; ctx.fillRect(m.x, m.y, m.w, 24);
+  ctx.fillStyle = '#7fe0a8'; ctx.font = '700 11px Consolas,monospace'; ctx.textAlign = 'left';
+  ctx.fillText('BTC-USD', m.x + 8, m.y + 16);
+  ctx.fillStyle = '#e8e6dd'; ctx.font = '700 11px Consolas,monospace';
+  ctx.fillText('$' + Math.round(S.priceShown).toLocaleString(), m.x + 74, m.y + 16);
+  const pl = S.position ? S.upnl : S.pnl_total;
+  ctx.fillStyle = pl >= 0 ? '#35d07f' : '#ff5470';
+  ctx.textAlign = 'right';
+  ctx.fillText((S.position ? '' : 'Σ ') + (pl >= 0 ? '+' : '') + '$' + Math.abs(pl).toFixed(2), m.x + m.w - 8, m.y + 16);
+  ctx.textAlign = 'left';
+  // screen scanline shimmer
+  ctx.fillStyle = 'rgba(255,255,255,.03)'; ctx.fillRect(m.x, m.y + (t * 40) % m.h, m.w, 2);
+  // glow
+  const g = ctx.createRadialGradient(m.x + m.w / 2, m.y + m.h / 2, 10, m.x + m.w / 2, m.y + m.h / 2, m.w * .9);
+  g.addColorStop(0, 'rgba(120,220,190,.16)'); g.addColorStop(1, 'rgba(120,220,190,0)');
+  ctx.fillStyle = g; ctx.fillRect(m.x - 90, m.y - 80, m.w + 180, m.h + 160);
+}
+function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+
+// ---------- side monitor: equity curve ----------
+function drawMonitorSide(t, pal, night) {
+  const m = G.mon2;
+  ctx.fillStyle = '#0c0e13'; roundRect(m.x - 8, m.y - 8, m.w + 16, m.h + 16, 8); ctx.fill();
+  ctx.fillStyle = '#0a0f15'; ctx.fillRect(m.x, m.y, m.w, m.h);
+  ctx.fillStyle = '#1a1d24'; ctx.fillRect(m.x + m.w / 2 - 9, m.y + m.h, 18, 30);
+  // equity from closed trades
+  const tr = S.trades.slice(-40);
+  const pts = [0]; let acc = 0;
+  for (const x of tr) { acc += x.pnl; pts.push(acc); }
+  if (pts.length > 1) {
+    const lo = Math.min(...pts), hi = Math.max(...pts, 1), sp = (hi - lo) || 1;
+    const px = i => m.x + 8 + i / (pts.length - 1) * (m.w - 16);
+    const py = v => m.y + m.h - 12 - (v - lo) / ((hi - lo) || 1) * (m.h - 34);
+    const up = acc >= 0;
+    ctx.strokeStyle = up ? '#35d07f' : '#ff5470'; ctx.lineWidth = 2; ctx.beginPath();
+    pts.forEach((v, i) => i ? ctx.lineTo(px(i), py(v)) : ctx.moveTo(px(0), py(v))); ctx.stroke();
+    ctx.globalAlpha = .16; ctx.fillStyle = up ? '#35d07f' : '#ff5470';
+    ctx.lineTo(m.x + m.w - 8, m.y + m.h - 10); ctx.lineTo(m.x + 8, m.y + m.h - 10); ctx.fill(); ctx.globalAlpha = 1;
+  }
+  // fake order rows
+  ctx.font = '8.5px Consolas,monospace';
+  for (let i = 0; i < 4; i++) {
+    const up = (i + Math.floor(t / 2)) % 2 === 0;
+    ctx.fillStyle = up ? 'rgba(53,208,127,.55)' : 'rgba(255,84,112,.55)';
+    ctx.fillRect(m.x + 8, m.y + 10 + i * 9, 26 + (i * 13 % 30), 4);
+    ctx.fillStyle = 'rgba(255,255,255,.25)';
+    ctx.fillRect(m.x + m.w - 42, m.y + 10 + i * 9, 34, 4);
+  }
+  ctx.fillStyle = '#8b93a7'; ctx.textAlign = 'center'; ctx.font = '700 9px sans-serif';
+  ctx.fillText('EQUITY', m.x + m.w / 2, m.y + m.h - 2); ctx.textAlign = 'left';
+  const g = ctx.createRadialGradient(m.x + m.w / 2, m.y + m.h / 2, 8, m.x + m.w / 2, m.y + m.h / 2, m.w);
+  g.addColorStop(0, 'rgba(110,200,235,.13)'); g.addColorStop(1, 'rgba(110,200,235,0)');
+  ctx.fillStyle = g; ctx.fillRect(m.x - 70, m.y - 60, m.w + 140, m.h + 120);
+}
+
+// ---------- desk items: keyboard, mug, lamp, phone ----------
+function drawDeskItems(t, pal, night) {
+  // keyboard
+  const kx = 610, kw = 260, kh = 30, kyb = 464;
+  ctx.fillStyle = '#232830'; roundRect(kx, kyb, kw, kh, 6); ctx.fill();
+  ctx.fillStyle = '#313846';
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 13; c++)
+    ctx.fillRect(kx + 8 + c * 19, kyb + 5 + r * 8, 10, 5.5);
+  // mug + steam
+  const mx = 916, my = G.deskTop - 4;
+  ctx.fillStyle = '#c96f4a'; roundRect(mx, my - 26, 26, 26, 4); ctx.fill();
+  ctx.strokeStyle = '#c96f4a'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.arc(mx + 30, my - 14, 7, -1.2, 1.2); ctx.stroke();
+  ctx.fillStyle = 'rgba(220,220,225,.25)';
+  for (let i = 0; i < 3; i++) {
+    const p = (t * .5 + i * .33) % 1;
+    ctx.globalAlpha = (1 - p) * .5;
+    ctx.beginPath(); ctx.arc(mx + 8 + Math.sin((p + i) * 6) * 5, my - 32 - p * 30, 3.5 + p * 2.5, 0, 7); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  // desk lamp
+  const lx = 1080;
+  ctx.strokeStyle = '#2a2e36'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(lx, G.deskTop); ctx.lineTo(lx, G.deskTop - 74); ctx.lineTo(lx - 52, G.deskTop - 108); ctx.stroke();
+  ctx.fillStyle = '#2a2e36'; ctx.beginPath(); ctx.arc(lx, G.deskTop, 10, 0, 7); ctx.fill();
+  ctx.fillStyle = '#3b414c'; ctx.beginPath(); ctx.ellipse(lx - 56, G.deskTop - 106, 20, 13, -.5, 0, 7); ctx.fill();
+  // lamp bulb glow when night
+  if (night > .45) {
+    const g = ctx.createRadialGradient(lx - 62, G.deskTop - 96, 4, lx - 62, G.deskTop - 96, 130);
+    g.addColorStop(0, 'rgba(255,205,120,.34)'); g.addColorStop(.5, 'rgba(255,195,110,.10)'); g.addColorStop(1, 'rgba(255,190,110,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(lx - 62, G.deskTop - 96, 130, 0, 7); ctx.fill();
+  }
+  // sticky notes
+  ctx.fillStyle = '#e8d75a'; ctx.fillRect(566, G.deskTop - 30, 30, 30);
+  ctx.fillStyle = '#8a7f22'; ctx.font = '9px sans-serif'; ctx.fillText('buy?', 572, G.deskTop - 18);
+  ctx.fillStyle = '#7ab8e8'; ctx.fillRect(600, G.deskTop - 26, 26, 26);
+  // mouse
+  ctx.fillStyle = '#2a2e36'; roundRect(1052, G.deskTop - 16, 24, 16, 7); ctx.fill();
+}
+// ---------- chair + fly ----------
+function drawChair(t) {
+  const c = G.chair;
+  // post + base
+  ctx.fillStyle = '#26292f'; ctx.fillRect(c.x + c.w / 2 - 7, c.y + 150, 14, 46);
+  ctx.strokeStyle = '#26292c'; ctx.lineWidth = 9; ctx.lineCap = 'round';
+  for (const a of [-.5, -.15, .18, .55]) {
+    ctx.beginPath(); ctx.moveTo(c.x + c.w / 2, c.y + 192);
+    ctx.lineTo(c.x + c.w / 2 + Math.sin(a * 3.1) * 74, c.y + 208); ctx.stroke();
+  }
+  // backrest
+  ctx.fillStyle = '#2e333d'; roundRect(c.x, c.y, c.w, 178, 26); ctx.fill();
+  ctx.fillStyle = '#383e4a'; roundRect(c.x + 12, c.y + 12, c.w - 24, 120, 18); ctx.fill();
+  // headrest
+  ctx.fillStyle = '#2e333d'; roundRect(c.x + c.w / 2 - 44, c.y - 22, 88, 30, 12); ctx.fill();
+}
+
+function drawFly(t, night) {
+  const fx = G.flyX, fy = G.flyY, fs = G.flyScale;
+  const bob = Math.sin(t * 1.6) * 2.2 + (S.position ? Math.sin(t * 7) * 1.2 : 0);
+  ctx.save(); ctx.translate(fx, fy + bob); ctx.scale(fs, fs);
+
+  // abdomen (nestles into the chair back)
+  const ab = ctx.createRadialGradient(-10, -16, 4, 0, 6, 58);
+  ab.addColorStop(0, '#54775a'); ab.addColorStop(.45, '#2f4436'); ab.addColorStop(1, '#1b2921');
+  ctx.fillStyle = ab;
+  ctx.beginPath(); ctx.ellipse(0, 10, 52, 46, 0, 0, 7); ctx.fill();
+  // stripes
+  ctx.strokeStyle = 'rgba(160,220,170,.22)'; ctx.lineWidth = 3;
+  for (let i = 1; i <= 3; i++) { ctx.beginPath(); ctx.ellipse(0, 10, 52 - i * 13, 46 - i * 12, 0, Math.PI * .15, Math.PI * .85); ctx.stroke(); }
+
+  // folded wing shells over the abdomen — iridescent shimmer
+  const wingA = .36 + Math.sin(t * .8) * .06;
+  ctx.save(); ctx.globalAlpha = wingA;
+  for (const s of [-1, 1]) {
+    const g = ctx.createLinearGradient(s * 8, -26, s * 62, 14);
+    g.addColorStop(0, '#d8e2f0'); g.addColorStop(.5, s > 0 ? '#aacfc6' : '#c6bcd6'); g.addColorStop(1, '#8a94a8');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.ellipse(s * 25 + Math.sin(t * .9 + s) * 1.5, 2, 29, 13, s * .52, 0, 7); ctx.fill();
+    // shimmer vein
+    ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(s * 4, -6); ctx.quadraticCurveTo(s * 30, -2, s * 50, 8); ctx.stroke();
+  }
+  ctx.restore();
+
+  // thorax + head
+  const th = ctx.createRadialGradient(-4, -22, 3, 0, -18, 34);
+  th.addColorStop(0, '#5a7a5e'); th.addColorStop(1, '#22321f');
+  ctx.fillStyle = th; ctx.beginPath(); ctx.ellipse(0, -24, 30, 26, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = '#26332a'; ctx.beginPath(); ctx.arc(0, -46, 17, 0, 7); ctx.fill();
+
+  // red compound eyes peeking past the head
+  for (const s of [-1, 1]) {
+    const eg = ctx.createRadialGradient(s * 15, -50, 1, s * 15, -50, 11);
+    eg.addColorStop(0, '#ff8a76'); eg.addColorStop(.6, '#c93a34'); eg.addColorStop(1, '#7e1c1c');
+    ctx.fillStyle = eg;
+    ctx.beginPath(); ctx.ellipse(s * 15, -50, 9, 11, s * .45, 0, 7); ctx.fill();
+  }
+
+  // antennae
+  ctx.strokeStyle = '#3d4f42'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+  for (const s of [-1, 1]) {
+    const sway = Math.sin(t * 2.1 + s) * 4 + Math.sin(t * .6) * 2;
+    ctx.beginPath(); ctx.moveTo(s * 6, -60);
+    ctx.quadraticCurveTo(s * 16 + sway, -78, s * 26 + sway, -74); ctx.stroke();
+  }
+  // tiny arms reaching over the desk edge to the keyboard
+  const type = Math.sin(t * 9) * 3, type2 = Math.sin(t * 9 + 2.2) * 3;
+  ctx.strokeStyle = '#2c3e33'; ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.moveTo(-20, -36); ctx.quadraticCurveTo(-52, -16, -56, -2 + type); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(20, -36); ctx.quadraticCurveTo(52, -14, 56, -4 + type2); ctx.stroke();
+  ctx.fillStyle = '#2c3e33';
+  ctx.beginPath(); ctx.arc(-56, -2 + type, 4, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc(56, -4 + type2, 4, 0, 7); ctx.fill();
+
+  ctx.restore();
+}
+
+// speech bubble (set by events)
+let bubble = null; // {text, until}
+function flySay(text) { bubble = { text, until: performance.now() + 1600 }; }
+function flySayCheck() {
+  if (!bubble) return;
+  const now = performance.now();
+  if (now > bubble.until) { bubble = null; return; }
+  const fx = G.flyX, fy = G.flyY - 120;
+  ctx.font = '700 17px sans-serif'; ctx.textAlign = 'center';
+  const w = ctx.measureText(bubble.text).width + 24;
+  ctx.fillStyle = 'rgba(245,242,232,.95)'; roundRect(fx - w / 2, fy - 24, w, 30, 9); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(fx - 5, fy + 6); ctx.lineTo(fx + 7, fy + 6); ctx.lineTo(fx + 1, fy + 15); ctx.fill();
+  ctx.fillStyle = '#22242c'; ctx.fillText(bubble.text, fx, fy - 3); ctx.textAlign = 'left';
+}
+
+// ---------- lighting overlays ----------
+function drawLighting(pal, night) {
+  // day: sun shaft from window across the floor
+  if (pal.daylight > .12) {
+    const w = G.win;
+    ctx.save(); ctx.globalAlpha = .10 * pal.daylight; ctx.fillStyle = '#ffe9b8';
+    ctx.beginPath();
+    ctx.moveTo(w.x + 30, w.y + w.h); ctx.lineTo(w.x + w.w - 40, w.y + w.h);
+    ctx.lineTo(w.x + w.w + 190, LH); ctx.lineTo(w.x + 250, LH); ctx.fill(); ctx.restore();
+  }
+  // night: monitor glow pools softly on fly/desk + faint wall wash
+  if (night > .3) {
+    let g = ctx.createRadialGradient(G.flyX, G.flyY - 20, 8, G.flyX, G.flyY - 20, 170);
+    g.addColorStop(0, 'rgba(120,230,195,' + (.20 * night) + ')');
+    g.addColorStop(1, 'rgba(120,230,195,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(G.flyX, G.flyY - 20, 170, 150, 0, 0, 7); ctx.fill();
+    g = ctx.createRadialGradient(G.mon.x + G.mon.w / 2, G.mon.y + G.mon.h, 20, G.mon.x + G.mon.w / 2, G.mon.y + G.mon.h, 340);
+    g.addColorStop(0, 'rgba(110,225,190,' + (.10 * night) + ')');
+    g.addColorStop(1, 'rgba(110,225,190,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(G.mon.x + G.mon.w / 2, G.mon.y + G.mon.h, 340, 260, 0, 0, 7); ctx.fill();
+  }
+  // vignette
+  const v = ctx.createRadialGradient(LW / 2, LH / 2, LH * .42, LW / 2, LH / 2, LW * .72);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(4,5,9,.42)');
+  ctx.fillStyle = v; ctx.fillRect(0, 0, LW, LH);
+}
+
+// ---------- confetti on wins ----------
+const parts = [];
+function confetti() {
+  for (let i = 0; i < 26; i++)
+    parts.push({ x: G.flyX + (Math.random() - .5) * 60, y: G.flyY - 80, vx: (Math.random() - .5) * 4, vy: -2 - Math.random() * 3, life: 1, c: ['#ffd98f', '#7fe0a8', '#8ecdf5', '#ff9db1'][i % 4] });
+}
+function drawParts(dt) {
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const p = parts[i]; p.x += p.vx; p.y += p.vy; p.vy += .06; p.life -= dt;
+    if (p.life <= 0) { parts.splice(i, 1); continue; }
+    ctx.globalAlpha = clamp(p.life, 0, 1); ctx.fillStyle = p.c;
+    ctx.fillRect(p.x, p.y, 5, 5);
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ===========================================================================
+// main loop
+// ===========================================================================
+let last = performance.now();
+function frame(now) {
+  const t = now / 1000, dt = Math.min(.05, (now - last) / 1000); last = now;
+  // smooth price lerp for the monitor
+  if (S.price) S.priceShown = S.priceShown ? lerp(S.priceShown, S.price, .08) : S.price;
+  const pal = dayPal();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = '#0b0d12'; ctx.fillRect(0, 0, cvs.width, cvs.height);
+  ctx.setTransform(scale, 0, 0, scale, ox, oy);
+  drawScene(t, pal);
+  flySayCheck();
+  drawParts(dt);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ===========================================================================
+// HUD rendering
+// ===========================================================================
+function hud() {
+  // top bar
+  const p = $('price');
+  p.textContent = '$' + Math.round(S.priceShown).toLocaleString();
+  p.className = S.upnl < 0 ? 'neg' : '';
+  const tot = $('pnlchip');
+  const show = S.position ? S.upnl : S.pnl_total;
+  tot.textContent = (show >= 0 ? '+' : '') + '$' + Math.abs(show).toFixed(2);
+  tot.className = show >= 0 ? 'pos' : 'neg';
+  const d = new Date();
+  $('clock').textContent = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  $('feed').className = S.feed_ok ? '' : 'sim';
+
+  // account card
+  const tp = $('totalpnl');
+  tp.textContent = (S.pnl_total >= 0 ? '+$' : '-$') + Math.abs(S.pnl_total).toFixed(2);
+  tp.className = 'big ' + (S.pnl_total >= 0 ? 'pos' : 'neg');
+  $('equity').textContent = '$' + (S.equity_start + S.pnl_total).toLocaleString(undefined, { maximumFractionDigits: 2 });
+  const n = S.wins + S.losses;
+  $('winrate').textContent = n ? Math.round(S.wins / n * 100) + '%' : '—';
+  $('wins').textContent = S.wins; $('losses').textContent = S.losses;
+  $('winbar').style.width = n ? (S.wins / n * 100) + '%' : '0%';
+
+  // position card
+  const pc = $('poscard');
+  if (S.position) {
+    pc.style.display = 'block';
+    const ps = $('posside');
+    ps.textContent = S.position.side; ps.className = 'side ' + S.position.side.toLowerCase();
+    $('posentry').textContent = '$' + S.position.entry.toLocaleString();
+    $('posnow').textContent = '$' + Math.round(S.priceShown).toLocaleString();
+    const u = $('posupnl');
+    u.textContent = (S.upnl >= 0 ? '+$' : '-$') + Math.abs(S.upnl).toFixed(2);
+    u.className = 'v ' + (S.upnl >= 0 ? 'pos' : 'neg');
+  } else pc.style.display = 'none';
+
+  // mood
+  const notes = S.brain_notes || [];
+  const m = notes.length ? notes[notes.length - 1] : null;
+  if (m) {
+    const ts = new Date(m.t * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    $('mood').innerHTML = `<b>${ts}</b> · $${Math.round(m.price).toLocaleString()} → ${m.stim} → <b>${m.action}</b><br><span style="color:#66708a">${(m.why || '').slice(0, 60)}</span>`;
+  }
+
+  // trades
+  let list = S.trades.slice();
+  list.sort((a, b) => {
+    switch (sortMode) {
+      case 'time_asc': return a.t_close - b.t_close;
+      case 'pnl_desc': return b.pnl - a.pnl;
+      case 'pnl_asc': return a.pnl - b.pnl;
+      default: return b.t_close - a.t_close;
+    }
+  });
+  $('trades').innerHTML = list.slice(0, 60).map(tr => {
+    const dt = new Date(tr.t_close * 1000);
+    const tm = dt.toLocaleString([], { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const mins = Math.max(1, Math.round((tr.t_close - (tr.t_open || tr.t_close)) / 60000));
+    const hold = mins < 60 ? mins + 'm' : Math.floor(mins / 60) + 'h' + String(mins % 60).padStart(2, '0');
+    return `<div class="tr"><span class="tm">${tm}</span><span class="side ${tr.side.toLowerCase()}">${tr.side}</span>` +
+      `<span class="pl ${tr.pnl >= 0 ? 'pos' : 'neg'}">${tr.pnl >= 0 ? '+' : '-'}$${Math.abs(tr.pnl).toFixed(2)}</span>` +
+      `<span class="dur">${hold}</span></div>`;
+  }).join('') || '<div style="color:#66708a;font-size:11.5px">No closed trades yet — warming up…</div>';
+}
+setInterval(hud, 500); hud();
+
+// sort buttons
+document.querySelectorAll('#sort button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('#sort button').forEach(x => x.classList.remove('on'));
+  b.classList.add('on'); sortMode = b.dataset.s; hud();
+});
+
+// panel toggle (mobile)
+const panel = $('panel');
+$('panelbtn').onclick = () => panel.classList.toggle('hidden');
+if (innerWidth < 761) panel.classList.add('hidden');
+
+// manual close
+$('closebtn').onclick = async () => {
+  try {
+    const r = await fetch('/api/close', { method: 'POST' });
+    const d = await r.json();
+    toast(d.ok ? '🪰 Fly is closing the position…' : '🔓 ' + (d.reason || 'nothing open'));
+  } catch (e) { toast('⚠️ close failed'); }
+};
+
+function toast(html) {
+  const t = $('toast'); t.innerHTML = html; t.classList.add('show');
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 4200);
+}
+</script>
+</body>
+</html>

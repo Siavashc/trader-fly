@@ -1,0 +1,8 @@
+.env
+data/
+user_states/
+*.log
+*.log.old
+__pycache__/
+**/__pycache__/
+*.pyc
