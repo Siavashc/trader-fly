@@ -1,0 +1,13 @@
+{
+  "experiences": [
+    {
+      "label": "trade-win LONG",
+      "signal_type": "reward",
+      "strength": 1.5,
+      "active_kc_count": 0,
+      "synapses_modified": 0
+    }
+  ],
+  "weight_modifications": {},
+  "total_experiences": 1
+}

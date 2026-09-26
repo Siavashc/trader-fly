@@ -1,6 +1,11 @@
 .env
 data/
 user_states/
+!seed/
+!seed/data/
+!seed/data/**
+!seed/user_states/
+!seed/user_states/**
 *.log
 *.log.old
 __pycache__/
