@@ -146,14 +146,26 @@ dp = Dispatcher()
 @dp.message(CommandStart())
 async def cmd_start(msg: Message):
     await msg.reply(
-        '🪰 <b>Trader Fly</b> — a real fruit-fly brain (138,639 neurons) '
-        'trading BTC from a tiny apartment desk.\n\n'
-        'BTC momentum hits its brain as taste & smell. Its behavior decides: '
-        'approach → <b>BUY</b>, escape → <b>SELL</b>. Profit rewards it, '
-        'losses punish it — its brain genuinely learns over time.\n\n'
-        '🏢 Open the <b>Trading Desk</b> to watch it live: candle monitor, '
-        'day/night window, and its full P&L ledger.',
-        reply_markup=main_kb(), parse_mode=ParseMode.HTML)
+        '🪰 <b>Welcome to the Trader Fly</b>\n\n'
+        'This is not a trading bot. It is a <b>real fruit-fly brain</b> — all '
+        '<b>138,639 neurons</b> of the actual FlyWire connectome, running on a '
+        'little laptop, staring at the Bitcoin chart from a tiny apartment desk.\n\n'
+        '<b>How the market talks to it:</b>\n'
+        '📈 Rally → it <i>tastes something sweet</i>\n'
+        '📉 Dump → it <i>smells danger</i>\n'
+        '😐 Sideways → it just <i>hears a buzzing sound</i>\n\n'
+        'Its brain reacts, and its behavior <i>is</i> the trade:\n'
+        'walks toward the food → <b>BUY</b> 🟢\n'
+        'bolts the other way → <b>SELL</b> 🔴\n'
+        'ignores everything → <b>HOLD</b> 😴\n\n'
+        'Every profit = a <b>dopamine reward</b>. Every loss = a zap. '
+        'Its brain <b>genuinely learns</b> from trading — check its mood below.\n\n'
+        '💼 Paper account: $1,000 · SL −0.35% · TP +0.7%\n'
+        '🏢 Tap <b>Open Trading Desk</b> to sit with it live — cozy room, '
+        'day/night sky, candle monitor, full ledger.\n\n'
+        '<code>/status</code> portfolio · <code>/position</code> open trade · '
+        '<code>/history</code> ledger · <code>/close</code> exit now · 🔔 alerts on every trade',
+        reply_markup=main_kb())
 
 
 @dp.message(Command('status'))
