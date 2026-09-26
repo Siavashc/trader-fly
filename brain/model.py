@@ -158,7 +158,21 @@ def create_model(path_comp, path_con, params):
 
     # load neuron connectivity dataframes
     df_comp = pd.read_csv(path_comp, index_col=0)
-    df_con = pd.read_parquet(path_con)
+
+    # prefer the compact npz (low-RAM hosts): same synapses (weight>=1) as the
+    # parquet, but int32/float32 and without zero-weight rows — ~75% less RAM.
+    # If missing, build it once with tools/build_compact_connectome.py.
+    con_dir = Path(path_con).parent
+    npz_path = con_dir / 'connectome_compact.npz'
+    if npz_path.exists():
+        import numpy as np
+        z = np.load(npz_path)
+        i_pre, i_post, w_raw = z['pre'], z['post'], z['w']
+    else:
+        df_con = pd.read_parquet(path_con)
+        i_pre = df_con.loc[:, 'Presynaptic_Index'].values
+        i_post = df_con.loc[:, 'Postsynaptic_Index'].values
+        w_raw = df_con.loc[:, 'Excitatory x Connectivity'].values
 
     neu = NeuronGroup(
         N=len(df_comp),
@@ -176,11 +190,9 @@ def create_model(path_comp, path_con, params):
 
     syn = Synapses(neu, neu, 'w : volt', on_pre='g += w', delay=params['t_dly'], name='default_synapses')
 
-    i_pre = df_con.loc[:, 'Presynaptic_Index'].values
-    i_post = df_con.loc[:, 'Postsynaptic_Index'].values
     syn.connect(i=i_pre, j=i_post)
 
-    syn.w = df_con.loc[:,'Excitatory x Connectivity'].values * params['w_syn']
+    syn.w = w_raw * params['w_syn']
 
     spk_mon = SpikeMonitor(neu) 
 

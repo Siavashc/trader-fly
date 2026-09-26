@@ -369,11 +369,11 @@ async def engine_loop(notify_cb=None):
 
     def _resurrect():
         # supervisor: a dead feed/tick task must never silence the fly
-        for name, coro in (('market', market_loop()), ('tick', tick_loop())):
+        for name, factory in (('market', market_loop), ('tick', tick_loop)):
             if tasks[name].done():
                 err = tasks[name].exception()
                 print(f'[trader] {name} task died ({err}); restarting', flush=True)
-                tasks[name] = asyncio.create_task(coro)
+                tasks[name] = asyncio.create_task(factory())
 
     supervisor = asyncio.create_task(_supervise(_resurrect))
     # let the market warm up a moment before the first brain cycle

@@ -36,6 +36,7 @@ PORT = int(os.environ.get('PORT', '8791'))
 HOST = os.environ.get('HOST', '127.0.0.1')   # 0.0.0.0 inside a container
 
 import trader
+import gist_sync
 
 SUBS_FILE = BASE_DIR / 'data' / 'subscribers.json'
 
@@ -178,6 +179,15 @@ async def cmd_position(msg: Message):
         parse_mode=ParseMode.HTML)
 
 
+@dp.message(Command('close'))
+async def cmd_close(msg: Message):
+    if not trader.STATE['position']:
+        await msg.reply('🔓 No open position — nothing to close.')
+        return
+    trader.request_close()
+    await msg.reply('🪰 Closing the position at the next tick (≤5s)…')
+
+
 @dp.message(Command('history'))
 async def cmd_history(msg: Message):
     await msg.reply(history_text('time_desc'), parse_mode=ParseMode.HTML,
@@ -284,6 +294,7 @@ async def main():
     import threading
     threading.Thread(target=run_webapp, daemon=True).start()
     engine = asyncio.create_task(trader.engine_loop(notify_cb=notify))
+    gist_sync.start()
     print(f'🪰 Trader Fly online. Mini app: {BASE_URL or "(no BASE_URL)"} '
           f'http://127.0.0.1:{PORT}', flush=True)
     try:
