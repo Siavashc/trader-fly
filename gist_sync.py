@@ -24,6 +24,7 @@ _lock = threading.Lock()
 STATE_FILE = BASE_DIR / 'data' / 'trader.json'
 CANDLES_FILE = BASE_DIR / 'data' / 'candles.json'
 BRAIN_FILE = BASE_DIR / 'user_states' / 'trader_brain.json'
+ANALYTICS_FILE = BASE_DIR / 'data' / 'analytics.json'
 
 
 def _headers():
@@ -54,7 +55,7 @@ def restore():
 
 def _snapshot_files():
     files = {}
-    for p in (STATE_FILE, CANDLES_FILE, BRAIN_FILE):
+    for p in (STATE_FILE, CANDLES_FILE, BRAIN_FILE, ANALYTICS_FILE):
         if p.exists():
             files[p.name] = {'content': p.read_text(encoding='utf-8')}
     # state.json = same shape the old /api/state served (mini app API)

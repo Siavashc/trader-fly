@@ -37,6 +37,7 @@ HOST = os.environ.get('HOST', '127.0.0.1')   # 0.0.0.0 inside a container
 
 import trader
 import gist_sync
+import analytics
 
 SUBS_FILE = BASE_DIR / 'data' / 'subscribers.json'
 
@@ -141,6 +142,12 @@ def history_text(sort: str, limit: int = 10) -> str:
 # ---------------------------------------------------------------------------
 
 dp = Dispatcher()
+analytics.start_middleware(dp)
+
+
+@dp.message(Command('ownerstats'))
+async def cmd_ownerstats(msg: Message):
+    await msg.reply(analytics.summary(), parse_mode=ParseMode.HTML)
 
 
 @dp.message(CommandStart())
