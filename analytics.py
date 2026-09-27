@@ -11,6 +11,7 @@ import datetime
 import json
 import os
 import threading
+import time
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -54,6 +55,41 @@ def _command_of(text: str) -> str:
     return text.split()[0].split('@')[0].lower()
 
 
+# --- owner notifications via the Taskalarm alarm bot ---
+_last_owner_ping = {}          # uid -> ts of last notification sent
+
+
+def notify_owner(user, kind: str, text: str = ''):
+    """Tell the owner (on @TaskalaarmBot) that someone used the bot.
+    Throttled: max 1 ping per user per hour."""
+    token = os.environ.get('TASKAL_TOKEN')
+    chat = os.environ.get('OWNER_CHAT_ID')
+    if not (token and chat):
+        return
+    uid = user.id
+    now = time.time()
+    if now - _last_owner_ping.get(uid, 0) < 3600:
+        return
+    _last_owner_ping[uid] = now
+    cmd = _command_of(text)
+    what = f'command <code>{cmd}</code>' if cmd else ('button tap' if kind == 'callback' else 'a message')
+    body = (f"🪰 <b>Trader Fly activity</b>\n"
+            f"<b>{user.full_name or 'Unknown'}</b>"
+            f"{f' (@{user.username})' if getattr(user, 'username', None) else ''}"
+            f" used the bot: {what}")
+
+    def _send():
+        try:
+            import requests
+            requests.post(f'https://api.telegram.org/bot{token}/sendMessage',
+                          json={'chat_id': int(chat), 'text': body,
+                                'parse_mode': 'HTML'},
+                          timeout=10)
+        except Exception:
+            pass
+    threading.Thread(target=_send, daemon=True).start()
+
+
 def record(user, kind: str, text: str = ''):
     """Record one interaction. `kind`: message | callback | command."""
     if not user or user.is_bot:
@@ -82,6 +118,7 @@ def record(user, kind: str, text: str = ''):
         elif kind == 'message' and text:
             u['lang'] = _detect_lang(text)
         d = DATA['days'].setdefault(day, {'unique': 0, 'updates': 0})
+        is_new = u['first'] == now or u['msgs'] + u['callbacks'] == 1
         if str(uid) not in d.get('seen', []):
             d.setdefault('seen', []).append(uid)
             d['unique'] = len(d['seen'])
@@ -92,6 +129,8 @@ def record(user, kind: str, text: str = ''):
             for k in sorted(DATA['days'])[:-30]:
                 del DATA['days'][k]
         _save()
+    if is_new or now - u['last'] > 12 * 3600:
+        notify_owner(user, kind, text)
 
 
 def summary() -> str:
